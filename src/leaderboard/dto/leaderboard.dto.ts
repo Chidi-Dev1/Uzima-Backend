@@ -1,4 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+export type LeaderboardPeriod = 'weekly' | 'monthly' | 'all-time';
+
+export const LEADERBOARD_PERIODS: LeaderboardPeriod[] = ['weekly', 'monthly', 'all-time'];
 
 export class LeaderboardEntryDto {
   @ApiProperty({ description: 'Position on the leaderboard (1-indexed)', example: 1 })
@@ -19,26 +21,13 @@ export class LeaderboardEntryDto {
   @ApiProperty({ description: 'Country code or "Global"', example: 'NG' })
   country: string;
 }
+export class LeaderboardPeriodRangeDto {
+  start: string | null;
+  end: string | null;
+}
 
-/** Pagination metadata included on every paginated leaderboard response. */
-export class LeaderboardPaginationMeta {
-  @ApiProperty({ description: 'Current page (1-indexed)', example: 1 })
-  page: number;
-
-  @ApiProperty({ description: 'Requested page size', example: 10 })
-  limit: number;
-
-  @ApiProperty({ description: 'True when a further page exists', example: true })
-  hasNextPage: boolean;
-
-  @ApiProperty({ description: 'True when a previous page exists', example: false })
-  hasPreviousPage: boolean;
-
-  @ApiPropertyOptional({ description: 'Next page number; absent on the last page', example: 2 })
-  nextPage?: number;
-
-  @ApiPropertyOptional({ description: 'Previous page number; absent on page 1', example: 1 })
-  previousPage?: number;
+export class LeaderboardPeriodQueryDto {
+  period?: LeaderboardPeriod;
 }
 
 export class LeaderboardResponseDto {
@@ -56,47 +45,35 @@ export class LeaderboardResponseDto {
     rank: number | null;
     totalXlm: number;
   };
-
-  @ApiProperty({
-    description: 'Pagination metadata for the current page',
-    type: LeaderboardPaginationMeta,
-  })
-  pagination: LeaderboardPaginationMeta;
+  period?: LeaderboardPeriod;
+  range?: LeaderboardPeriodRangeDto;
 }
 
 /**
- * Response for the GET /leaderboard/me/rank endpoint.
+ * Ranking rules (documented and tested):
  *
- * Contains only the fields that are safe to expose — no password hashes,
- * refresh tokens, 2FA secrets, or other restricted profile data.
+ * 1. Eligible user states: only users with accountStatus === 'active' and
+ *    verified === true are included in rankings. Accounts that are banned,
+ *    suspended, deleted, or unverified are excluded.
+ *
+ * 2. Sorting: entries are ordered by totalXlm descending. The sort is stable
+ *    and deterministic for a fixed data set.
+ *
+ * 3. Tie handling: users with equal totalXlm share the same rank
+ *    (competition ranking, "1224"). The next distinct totalXlm value receives
+ *    rank equal to the number of entries preceding it plus one. Within a tie,
+ *    entries are ordered by userId ascending to guarantee determinism.
+ *
+ * 4. myRank: for an eligible user, myRank.rank is the shared rank and
+ *    myRank.totalXlm is the user's total. For an excluded user, myRank.rank
+ *    is null and myRank.totalXlm is 0.
  */
-export class UserRankResponseDto {
-  @ApiProperty({ description: 'User identifier', example: 'uuid-v4-value' })
-  userId: string;
-
-  @ApiProperty({
-    description: 'Anonymised display name (first name + last initial)',
-    example: 'John D.',
-  })
-  displayName: string;
-
-  @ApiProperty({
-    description: '1-indexed rank on this leaderboard; null when the user has no score',
-    example: 42,
-    nullable: true,
-  })
-  rank: number | null;
-
-  @ApiProperty({ description: 'Total XLM earned in this leaderboard period', example: 350.75 })
-  totalXlm: number;
-
-  @ApiProperty({ description: 'Country code or "Global"', example: 'NG' })
-  country: string;
-
-  @ApiProperty({
-    description: 'Leaderboard period this rank belongs to',
-    enum: ['daily', 'weekly', 'monthly', 'all-time'],
-    example: 'all-time',
-  })
-  period: string;
-}
+export const LEADERBOARD_RANKING_RULES = {
+  eligibleAccountStatuses: ['active'] as const,
+  requiresVerified: true,
+  tieHandling: 'competition' as const,
+  tieBreaker: 'userId-asc' as const,
+  sortBy: 'totalXlm-desc' as const,
+  excludedHyRank: null,
+  excludedHyTotalXlm: 0,
+} as const;
